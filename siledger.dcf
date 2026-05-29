@@ -1,0 +1,12 @@
+name: siledger
+title: siledger
+username: siledger
+account: siledger
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 17438133
+bundleId: 12054921
+url: https://siledger.shinyapps.io/siledger/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE
