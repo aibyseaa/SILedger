@@ -1,0 +1,1140 @@
+
+library(shiny)
+library(DT)
+
+# =========================================
+# FORMAT RUPIAH
+# =========================================
+rupiah_format <- function(angka) {
+  if (is.na(angka) || angka == 0) return("-")
+  paste0(
+    "Rp ",
+    format(
+      round(angka, 0),
+      big.mark     = ".",
+      decimal.mark = ",",
+      scientific   = FALSE
+    )
+  )
+}
+
+# =========================================
+# DATA DAFTAR AKUN
+# =========================================
+daftar_akun <- data.frame(
+  Kode_Akun = c("1000",  "1100", "1200",      "2000",       "2100",             "3000",    "3100",    "1110",    "1120",    "1210"),
+  Nama_Akun = c("Aset",  "Cash", "Equipment", "Liabilitas", "Accounts Payable", "Ekuitas", "Capital", "Bank BCA", "Bank Mandiri", "Account Receivable"),
+  Tipe_Akun = c("Aset",  "Aset", "Aset",      "Liabilitas", "Liabilitas",       "Ekuitas", "Ekuitas", "Kas/Bank", "Kas/Bank", "AR"),
+  Is_Parent = c(TRUE,    FALSE,  FALSE,       TRUE,         FALSE,              TRUE,      FALSE,     FALSE,      FALSE,      FALSE),
+  stringsAsFactors = FALSE
+)
+
+# =========================================
+# DATA AWAL SALDO AKUN (untuk simulasi)
+# =========================================
+initial_balance_data <- data.frame(
+  Kode_Akun = c("1100", "1110", "1120", "1200", "2100", "1210", "3100"),
+  Nama_Akun = c("Cash", "Bank BCA", "Bank Mandiri", "Equipment", "Accounts Payable", "Account Receivable", "Capital"),
+  Saldo_Awal = c(50000000, 100000000, 75000000, 500000000, 25000000, 150000000, 700000000),
+  stringsAsFactors = FALSE
+)
+
+# =========================================
+# UI
+# =========================================
+ui <- navbarPage(
+  
+  title = "SILedger",
+  id = "main_nav",
+  
+  # =====================================
+  # TAB 1: JOURNAL VOUCHER
+  # =====================================
+  tabPanel(
+    
+    "Journal Voucher",
+    
+    fluidPage(
+      
+      br(),
+      
+      fluidRow(
+        
+        # Form Input
+        column(
+          4,
+          wellPanel(
+            
+            h4("Header Voucher"),
+            
+            textInput("voucher_no", "No Voucher"),
+            
+            dateInput(
+              "tanggal",
+              "Tanggal",
+              value  = Sys.Date(),
+              format = "dd-mm-yyyy"
+            ),
+            
+            textAreaInput("keterangan", "Keterangan"),
+            
+            hr(),
+            h4("Detail Akun"),
+            
+            textInput("kode_akun",  "Kode Akun"),
+            textInput("nama_akun",  "Nama Akun"),
+            
+            numericInput("debit",  "Debit",  value = 0, min = 0),
+            numericInput("kredit", "Kredit", value = 0, min = 0),
+            
+            hr(),
+            h4("Subsidiary Ledger"),
+            
+            selectInput(
+              "subsidiary_type",
+              "Subsidiary Type",
+              choices = c("None", "Customer", "Vendor", "Bank", "Employee")
+            ),
+            
+            textInput("subsidiary_name", "Subsidiary Name"),
+            textInput("invoice_no",      "Invoice Number"),
+            
+            actionButton("add_btn", "Simpan / Update Jurnal", class = "btn-primary", width = "100%"),
+            br(), br(),
+            actionButton("reset_btn", "Reset Semua",   class = "btn-danger",  width = "100%")
+          )
+        ),
+        
+        # Preview Jurnal
+        column(
+          8,
+          h3("Preview Journal Voucher"),
+          DTOutput("preview_table"),
+          br(),
+          fluidRow(
+            column(4, h4("Total Debit"),   verbatimTextOutput("total_debit")),
+            column(4, h4("Total Kredit"),  verbatimTextOutput("total_kredit")),
+            column(4, h4("Status"),        uiOutput("status_balance"))
+          )
+        )
+      )
+    )
+  ),
+  
+  # =====================================
+  # TAB 2: LIST OF JOURNAL VOUCHER
+  # =====================================
+  tabPanel(
+    
+    "List of Journal Voucher",
+    
+    fluidPage(
+      
+      br(),
+      
+      h3("Daftar Journal Voucher"),
+      
+      selectInput(
+        "filter_voucher",
+        "Filter Voucher",
+        choices = c("Semua"),
+        selected = "Semua"
+      ),
+      
+      br(),
+      
+      fluidRow(
+        
+        column(
+          6,
+          actionButton(
+            "edit_journal",
+            "Edit Selected",
+            class = "btn btn-warning"
+          )
+        ),
+        
+        column(
+          6,
+          actionButton(
+            "delete_journal",
+            "Delete Selected",
+            class = "btn btn-danger"
+          )
+        )
+      ),
+      
+      br(),
+      
+      DTOutput("table_journal")
+    )
+  ),
+  
+  # =====================================
+  # TAB 3: ACCOUNT HISTORY (BARU)
+  # =====================================
+  tabPanel(
+    "Account History",
+    fluidPage(
+      br(),
+      sidebarLayout(
+        sidebarPanel(
+          h4("Filter Account History"),
+          selectInput("filter_type", "Type",
+                      choices = c("Semua", "Journal Voucher")),
+          textInput("filter_source_no", "Source No", value = ""),
+          textInput("filter_account_no", "Account No", value = ""),
+          selectInput("filter_account_type", "Account Type",
+                      choices = c("Semua", "Asset", "Liability", "Equity", "Revenue", "Expense")),
+          textInput("filter_customer_vendor", "Customer/Vendor", value = ""),
+          textInput("filter_project", "Project", value = ""),
+          textInput("filter_department", "Department", value = ""),
+          checkboxInput("filter_by_date", "Filter by Date", value = FALSE),
+          conditionalPanel(
+            condition = "input.filter_by_date == true",
+            dateInput("filter_date", "Tanggal Transaksi", value = Sys.Date(), format = "dd-mm-yyyy")
+          ),
+          hr(),
+          actionButton("reset_history_filters", "Reset Filter", class = "btn-warning", width = "100%")
+        ),
+        mainPanel(
+          h3("Account History"),
+          DTOutput("account_history_table")
+        )
+      )
+    )
+  ),
+  
+  # =====================================
+  # TAB 4: SUBSIDIARY LEDGER
+  # =====================================
+  tabPanel(
+    
+    "Subsidiary Ledger",
+    
+    fluidPage(
+      br(),
+      sidebarLayout(
+        sidebarPanel(
+          selectInput(
+            "filter_subsidiary",
+            "Filter Subsidiary Type",
+            choices = c("Semua", "Customer", "Vendor", "Bank", "Employee")
+          )
+        ),
+        mainPanel(
+          h3("Subsidiary Ledger"),
+          DTOutput("table_subsidiary")
+        )
+      )
+    )
+  ),
+  
+  # =====================================
+  # TAB 5: ACCOUNT BUDGET
+  # =====================================
+  tabPanel(
+    
+    "List of Account Budget",
+    
+    fluidPage(
+      br(),
+      
+      # Judul + tombol New
+      fluidRow(
+        column(6, h3("List of Account Budget")),
+        column(6,
+               div(
+                 style = "text-align:right;",
+                 actionButton("btn_new", "+ New", class = "btn btn-primary")
+               )
+        )
+      ),
+      
+      br(),
+      
+      # Tabel daftar budget
+      wellPanel(
+        DTOutput("table_budget_list")
+      ),
+      
+      # Form input — muncul hanya saat tombol New diklik
+      uiOutput("form_budget")
+    )
+  ),
+  
+  # =====================================
+  # TAB 6: ACCOUNT BALANCE
+  # =====================================
+  tabPanel(
+    
+    "Account Balance",
+    
+    fluidPage(
+      br(),
+      
+      # Header
+      fluidRow(
+        column(12,
+               h3("Account Balance - Saldo Akun"),
+               hr()
+        )
+      ),
+      
+      # Filter Section
+      fluidRow(
+        column(12,
+               wellPanel(
+                 h4("Filter & Display Options"),
+                 hr(),
+                 
+                 fluidRow(
+                   column(4,
+                          h5("Pilih Jenis Akun:"),
+                          selectInput(
+                            "account_type_filter",
+                            label = NULL,
+                            choices = c("Semua Akun" = "ALL",
+                                        "Aset" = "Aset",
+                                        "Liabilitas" = "Liabilitas",
+                                        "Ekuitas" = "Ekuitas",
+                                        "Kas/Bank" = "Kas/Bank",
+                                        "AR (Account Receivable)" = "AR",
+                                        "AP (Account Payable)" = "AP")
+                          )
+                   ),
+                   
+                   column(8,
+                          h5("Pilihan Tampilan Mata Uang:"),
+                          radioButtons(
+                            "currency_display",
+                            label = NULL,
+                            choices = c(
+                              "Base Currency (Semua Akun)" = "BASE",
+                              "Prime Currency (Khusus Kas/Bank, AR, AP)" = "PRIME",
+                              "Keduanya Ditampilkan (Khusus Kas/Bank, AR, AP)" = "BOTH"
+                            ),
+                            selected = "BASE",
+                            inline = FALSE
+                          )
+                   )
+                 ),
+                 
+                 hr(),
+                 
+                 fluidRow(
+                   column(12,
+                          h5("Periode Laporan:"),
+                          sliderInput(
+                            "period_range",
+                            label = "Pilih Periode (Bulan 1-12)",
+                            min = 1,
+                            max = 12,
+                            value = c(1, 12),
+                            step = 1,
+                            width = "100%"
+                          ),
+                          tags$small("Menampilkan perubahan saldo lengkap dari Periode 1 s/d 12", 
+                                     style = "color: gray;")
+                   )
+                 )
+               )
+        )
+      ),
+      
+      br(),
+      
+      # Tampilkan Laporan Account Balance
+      fluidRow(
+        column(12,
+               h4("Laporan Saldo Akun"),
+               DTOutput("account_balance_table"),
+               br(),
+               downloadButton("download_balance", "Download Laporan (CSV)", class = "btn btn-success")
+        )
+      )
+    )
+  )
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# =========================================
+# SERVER
+# =========================================
+server <- function(input, output, session) {
+  
+  editing_row <- reactiveVal(NULL)
+  # =====================================
+  # DATABASE REAKTIF — JURNAL
+  # =====================================
+  data_jurnal <- reactiveVal(
+    data.frame(
+      Tanggal         = character(),
+      No_Voucher      = character(),
+      Kode_Akun       = character(),
+      Nama_Akun       = character(),
+      Debit           = numeric(),
+      Kredit          = numeric(),
+      Keterangan      = character(),
+      Subsidiary_Type = character(),
+      Subsidiary_Name = character(),
+      Invoice_No      = character(),
+      Periode_Bulan   = integer(),
+      stringsAsFactors = FALSE
+    )
+  )
+  
+  # Inisialisasi data jurnal contoh untuk demo
+  sample_journal <- data.frame(
+    Tanggal = c("2024-01-15", "2024-02-20", "2024-03-10", "2024-01-25", "2024-02-05"),
+    No_Voucher = c("JV-001", "JV-002", "JV-003", "JV-004", "JV-005"),
+    Kode_Akun = c("1100", "1110", "1120", "2100", "1210"),
+    Nama_Akun = c("Cash", "Bank BCA", "Bank Mandiri", "Accounts Payable", "Account Receivable"),
+    Debit = c(10000000, 25000000, 15000000, 0, 5000000),
+    Kredit = c(0, 0, 0, 5000000, 0),
+    Keterangan = c("Penerimaan kas", "Setoran bank", "Transfer bank", "Pembayaran hutang", "Penjualan kredit"),
+    Subsidiary_Type = c("Bank", "Bank", "Bank", "Vendor", "Customer"),
+    Subsidiary_Name = c("Bank Central", "BCA Pusat", "Mandiri Cabang", "PT Supplier", "PT Customer A"),
+    Invoice_No = c("INV-001", "INV-002", "INV-003", "INV-004", "INV-005"),
+    Periode_Bulan = c(1, 2, 3, 1, 2),
+    stringsAsFactors = FALSE
+  )
+  
+  data_jurnal(sample_journal)
+  
+  # =====================================
+  # DATABASE REAKTIF — BUDGET
+  # =====================================
+  data_budget <- reactiveVal(
+    data.frame(
+      Kode_Akun        = character(),
+      Nama_Akun        = character(),
+      Tahun_Anggaran   = integer(),
+      Opening_Balance  = numeric(),
+      Perubahan_Budget = numeric(),
+      Total_Budget     = numeric(),
+      stringsAsFactors = FALSE
+    )
+  )
+  
+  # =====================================
+  # DATABASE SALDO AKUN (FIX ACCOUNT BALANCE)
+  # =====================================
+  calculate_account_balance <- function() {
+    
+    jurnal_data <- data_jurnal()
+    saldo_data  <- initial_balance_data
+    
+    hasil <- data.frame()
+    
+    # running saldo
+    saldo_sekarang <- saldo_data$Saldo_Awal
+    names(saldo_sekarang) <- saldo_data$Kode_Akun
+    
+    # loop per bulan
+    for(i in 1:12) {
+      
+      jurnal_bulan <- jurnal_data[jurnal_data$Periode_Bulan == i, ]
+      
+      # summary debit kredit per akun
+      if(nrow(jurnal_bulan) > 0) {
+        
+        summary_bulan <- aggregate(
+          cbind(Debit, Kredit) ~ Kode_Akun,
+          data = jurnal_bulan,
+          FUN = sum
+        )
+        
+      } else {
+        
+        summary_bulan <- data.frame(
+          Kode_Akun = character(),
+          Debit = numeric(),
+          Kredit = numeric(),
+          stringsAsFactors = FALSE
+        )
+      }
+      
+      # gabungkan dengan saldo awal
+      period_result <- merge(
+        saldo_data,
+        summary_bulan,
+        by = "Kode_Akun",
+        all.x = TRUE
+      )
+      
+      # isi NA
+      period_result$Debit[is.na(period_result$Debit)]   <- 0
+      period_result$Kredit[is.na(period_result$Kredit)] <- 0
+      
+      # periode
+      period_result$Periode <- i
+      
+      # saldo awal periode
+      period_result$Saldo_Awal_Periode <- saldo_sekarang[period_result$Kode_Akun]
+      
+      period_result$Saldo_Awal_Periode[
+        is.na(period_result$Saldo_Awal_Periode)
+      ] <- 0
+      
+      # mutasi
+      period_result$Mutasi <- period_result$Debit - period_result$Kredit
+      
+      # saldo akhir
+      period_result$Saldo_Akhir <- 
+        period_result$Saldo_Awal_Periode +
+        period_result$Mutasi
+      
+      # update running saldo
+      saldo_sekarang[period_result$Kode_Akun] <- 
+        period_result$Saldo_Akhir
+      
+      hasil <- rbind(hasil, period_result)
+    }
+    
+    # tambahkan tipe akun
+    hasil <- merge(
+      hasil,
+      daftar_akun[, c("Kode_Akun", "Tipe_Akun")],
+      by = "Kode_Akun",
+      all.x = TRUE
+    )
+    
+    return(hasil)
+  }
+  # =====================================
+  # FILTERED ACCOUNT BALANCE DATA
+  # =====================================
+  filtered_balance_data <- reactive({
+    
+    balance_data <- calculate_account_balance()
+    
+    # Filter jenis akun
+    if(input$account_type_filter != "ALL") {
+      
+      balance_data <- balance_data[
+        balance_data$Tipe_Akun == input$account_type_filter,
+      ]
+    }
+    
+    # Filter periode
+    balance_data <- balance_data[
+      balance_data$Periode >= input$period_range[1] &
+        balance_data$Periode <= input$period_range[2],
+    ]
+    
+    # Currency display
+    if(input$currency_display == "BASE") {
+      
+      balance_data$Currency_Type <- "Base Currency (IDR)"
+      
+    } else if(input$currency_display == "PRIME") {
+      
+      balance_data <- balance_data[
+        balance_data$Tipe_Akun %in% c("Kas/Bank", "AR", "AP"),
+      ]
+      
+      balance_data$Currency_Type <- "Prime Currency (IDR)"
+      
+    } else if(input$currency_display == "BOTH") {
+      
+      balance_data <- balance_data[
+        balance_data$Tipe_Akun %in% c("Kas/Bank", "AR", "AP"),
+      ]
+      
+      balance_data$Currency_Type <- "Base & Prime Currency (IDR)"
+    }
+    
+    return(balance_data)
+  })
+  # =====================================
+  # AUTO NOL DEBIT/KREDIT (Journal Voucher)
+  # =====================================
+  observeEvent(input$debit, {
+    if (!is.na(input$debit) && input$debit > 0)
+      updateNumericInput(session, "kredit", value = 0)
+  }, ignoreInit = TRUE)
+  
+  observeEvent(input$kredit, {
+    if (!is.na(input$kredit) && input$kredit > 0)
+      updateNumericInput(session, "debit", value = 0)
+  }, ignoreInit = TRUE)
+  
+  # =====================================
+  # TAMBAH JURNAL
+  # =====================================
+  observeEvent(input$add_btn, {
+    
+    if (input$voucher_no == "" || input$kode_akun == "" ||
+        (input$debit == 0 && input$kredit == 0)) {
+      
+      showNotification(
+        "Lengkapi data jurnal!",
+        type = "warning"
+      )
+      
+      return()
+    }
+    
+    bulan <- as.integer(format(input$tanggal, "%m"))
+    
+    new_row <- data.frame(
+      Tanggal         = as.character(input$tanggal),
+      No_Voucher      = input$voucher_no,
+      Kode_Akun       = input$kode_akun,
+      Nama_Akun       = input$nama_akun,
+      Debit           = input$debit,
+      Kredit          = input$kredit,
+      Keterangan      = input$keterangan,
+      Subsidiary_Type = input$subsidiary_type,
+      Subsidiary_Name = input$subsidiary_name,
+      Invoice_No      = input$invoice_no,
+      Periode_Bulan   = bulan,
+      stringsAsFactors = FALSE
+    )
+    
+    all_data <- data_jurnal()
+    
+    # =========================
+    # MODE EDIT
+    # =========================
+    if(!is.null(editing_row())) {
+      
+      row_id <- editing_row()
+      
+      # replace per kolom supaya aman
+      all_data[row_id, "Tanggal"]         <- as.character(input$tanggal)
+      all_data[row_id, "No_Voucher"]      <- input$voucher_no
+      all_data[row_id, "Kode_Akun"]       <- input$kode_akun
+      all_data[row_id, "Nama_Akun"]       <- input$nama_akun
+      all_data[row_id, "Debit"]           <- input$debit
+      all_data[row_id, "Kredit"]          <- input$kredit
+      all_data[row_id, "Keterangan"]      <- input$keterangan
+      all_data[row_id, "Subsidiary_Type"] <- input$subsidiary_type
+      all_data[row_id, "Subsidiary_Name"] <- input$subsidiary_name
+      all_data[row_id, "Invoice_No"]      <- input$invoice_no
+      all_data[row_id, "Periode_Bulan"]   <- bulan
+      
+      data_jurnal(all_data)
+      
+      editing_row(NULL)
+      
+      showNotification(
+        "Data jurnal berhasil diupdate!",
+        type = "message"
+      )
+      
+    } else {
+      
+      # =========================
+      # MODE TAMBAH
+      # =========================
+      data_jurnal(rbind(all_data, new_row))
+      
+      showNotification(
+        "Jurnal berhasil ditambahkan!",
+        type = "success"
+      )
+    }
+    
+    # reset form
+    updateTextInput(session, "kode_akun", value = "")
+    updateTextInput(session, "nama_akun", value = "")
+    updateNumericInput(session, "debit", value = 0)
+    updateNumericInput(session, "kredit", value = 0)
+    updateTextAreaInput(session, "keterangan", value = "")
+  })
+  
+  # =====================================
+  # RESET JURNAL
+  # =====================================
+  observeEvent(input$reset_btn, {
+    data_jurnal(
+      data.frame(
+        Tanggal         = character(),
+        No_Voucher      = character(),
+        Kode_Akun       = character(),
+        Nama_Akun       = character(),
+        Debit           = numeric(),
+        Kredit          = numeric(),
+        Keterangan      = character(),
+        Subsidiary_Type = character(),
+        Subsidiary_Name = character(),
+        Invoice_No      = character(),
+        Periode_Bulan   = integer(),
+        stringsAsFactors = FALSE
+      )
+    )
+    showNotification("Semua data jurnal telah direset!", type = "warning")
+  })
+  
+  # =====================================
+  # FILTER JOURNAL & SUBSIDIARY
+  # =====================================
+  filtered_journal <- reactive({
+    if (input$filter_voucher == "Semua") data_jurnal()
+    else subset(data_jurnal(), No_Voucher == input$filter_voucher)
+  })
+  
+  filtered_subsidiary <- reactive({
+    df <- subset(data_jurnal(), Subsidiary_Type != "None")
+    if (input$filter_subsidiary == "Semua") df
+    else subset(df, Subsidiary_Type == input$filter_subsidiary)
+  })
+  # =====================================
+  # EDIT JOURNAL
+  # =====================================
+  observeEvent(input$edit_journal, {
+    updateNavbarPage(session, "main_nav", selected = "Journal Voucher")
+    selected <- input$table_journal_rows_selected
+    
+    if(length(selected) == 0) {
+      
+      showNotification(
+        "Pilih data terlebih dahulu!",
+        type = "warning"
+      )
+      
+      return()
+    }
+    
+    df <- filtered_journal()
+    
+    selected_row <- df[selected, ]
+    
+    # simpan index row yang diedit
+    editing_row(
+      which(
+        data_jurnal()$No_Voucher == selected_row$No_Voucher &
+          data_jurnal()$Kode_Akun  == selected_row$Kode_Akun &
+          data_jurnal()$Tanggal    == selected_row$Tanggal
+      )[1]
+    )
+    
+    updateTextInput(session, "voucher_no",
+                    value = selected_row$No_Voucher)
+    
+    updateDateInput(session, "tanggal",
+                    value = as.Date(selected_row$Tanggal))
+    
+    updateTextInput(session, "kode_akun",
+                    value = selected_row$Kode_Akun)
+    
+    updateTextInput(session, "nama_akun",
+                    value = selected_row$Nama_Akun)
+    
+    updateNumericInput(session, "debit",
+                       value = selected_row$Debit)
+    
+    updateNumericInput(session, "kredit",
+                       value = selected_row$Kredit)
+    
+    updateTextAreaInput(session, "keterangan",
+                        value = selected_row$Keterangan)
+    
+    showNotification(
+      "Mode edit aktif. Klik Simpan/Edit Jurnal untuk menyimpan perubahan.",
+      type = "message"
+    )
+    updateNavbarPage(session, inputId = NULL, selected = "Journal Voucher")
+  })
+  # =====================================
+  # DELETE JOURNAL
+  # =====================================
+  observeEvent(input$delete_journal, {
+    
+    selected <- input$table_journal_rows_selected
+    
+    if(length(selected) == 0) {
+      
+      showNotification(
+        "Pilih data terlebih dahulu!",
+        type = "warning"
+      )
+      
+      return()
+    }
+    
+    df <- filtered_journal()
+    
+    selected_row <- df[selected, ]
+    
+    all_data <- data_jurnal()
+    
+    row_index <- which(
+      all_data$No_Voucher == selected_row$No_Voucher &
+        all_data$Kode_Akun == selected_row$Kode_Akun &
+        all_data$Tanggal == selected_row$Tanggal
+    )
+    
+    if(length(row_index) > 0) {
+      
+      all_data <- all_data[-row_index[1], ]
+      
+      data_jurnal(all_data)
+      
+      showNotification(
+        "Data jurnal berhasil dihapus!",
+        type = "message"
+      )
+    }
+  })
+  # =====================================
+  # PREVIEW TABLE (Journal Voucher)
+  # =====================================
+  output$preview_table <- renderDT({
+    df <- data_jurnal()
+    if (nrow(df) > 0) {
+      df$Debit  <- sapply(df$Debit,  rupiah_format)
+      df$Kredit <- sapply(df$Kredit, rupiah_format)
+    }
+    datatable(df[, c("Tanggal", "No_Voucher", "Kode_Akun", "Nama_Akun", "Debit", "Kredit")], 
+              options = list(pageLength = 5, autoWidth = TRUE), rownames = FALSE)
+  })
+  
+  # =====================================
+  # TABLE JOURNAL (List of JV)
+  # =====================================
+  output$table_journal <- renderDT({
+    
+    df <- filtered_journal()
+    
+    if (nrow(df) > 0) {
+      
+      df$Debit  <- sapply(df$Debit,  rupiah_format)
+      df$Kredit <- sapply(df$Kredit, rupiah_format)
+    }
+    
+    datatable(
+      df[, c(
+        "Tanggal",
+        "No_Voucher",
+        "Kode_Akun",
+        "Nama_Akun",
+        "Debit",
+        "Kredit",
+        "Keterangan"
+      )],
+      options = list(
+        pageLength = 10,
+        autoWidth  = TRUE
+      ),
+      selection = "single",
+      rownames  = FALSE
+    )
+  }, server = FALSE)
+  
+  # =====================================
+  # TABLE SUBSIDIARY LEDGER
+  # =====================================
+  output$table_subsidiary <- renderDT({
+    df <- filtered_subsidiary()
+    if (nrow(df) > 0) {
+      df$Debit  <- sapply(df$Debit,  rupiah_format)
+      df$Kredit <- sapply(df$Kredit, rupiah_format)
+    }
+    datatable(
+      df[, c("Tanggal", "No_Voucher", "Subsidiary_Type", "Subsidiary_Name",
+             "Invoice_No", "Nama_Akun", "Debit", "Kredit")],
+      options  = list(pageLength = 10, autoWidth = TRUE),
+      rownames = FALSE
+    )
+  })
+  
+  # =====================================
+  # TOTAL DEBIT & KREDIT
+  # =====================================
+  total_debit  <- reactive({ sum(data_jurnal()$Debit) })
+  total_kredit <- reactive({ sum(data_jurnal()$Kredit) })
+  
+  output$total_debit  <- renderText({ rupiah_format(total_debit()) })
+  output$total_kredit <- renderText({ rupiah_format(total_kredit()) })
+  
+  output$status_balance <- renderUI({
+    if (nrow(data_jurnal()) == 0) {
+      span("KOSONG",       style = "color:gray;  font-weight:bold;")
+    } else if (total_debit() == total_kredit()) {
+      span("BALANCED",     style = "color:green; font-weight:bold;")
+    } else {
+      span("NOT BALANCED", style = "color:red;   font-weight:bold;")
+    }
+  })
+  
+  # =====================================
+  # ACCOUNT BALANCE TABLE
+  # =====================================
+  output$account_balance_table <- renderDT({
+    data <- filtered_balance_data()
+    if(nrow(data) == 0) {
+      return(datatable(
+        data.frame(Pesan = "Tidak ada data untuk filter yang dipilih"),
+        options = list(dom = "t"),
+        rownames = FALSE
+      ))
+    }
+    display_data <- data.frame(
+      `Kode Akun` = data$Kode_Akun,
+      `Nama Akun` = data$Nama_Akun,
+      `Periode (Bulan)` = data$Periode,
+      `Saldo Awal` = sapply(data$Saldo_Awal_Periode, rupiah_format),
+      `Debit` = sapply(data$Debit, rupiah_format),
+      `Kredit` = sapply(data$Kredit, rupiah_format),
+      `Mutasi` = sapply(data$Mutasi, rupiah_format),
+      `Saldo Akhir` = sapply(data$Saldo_Akhir, rupiah_format),
+      `Tipe Akun` = data$Tipe_Akun,
+      `Tipe Mata Uang` = data$Currency_Type,
+      check.names = FALSE,
+      stringsAsFactors = FALSE
+    )
+    datatable(
+      display_data,
+      options = list(pageLength = 15, autoWidth = TRUE, scrollX = TRUE, dom = 'Bfrtip'),
+      rownames = FALSE,
+      class = 'display stripe hover'
+    ) %>%
+      formatStyle(columns = 'Saldo Akhir', backgroundColor = styleInterval(0, c('white', '#d4edda')))
+  })
+  
+  # =====================================
+  # DOWNLOAD ACCOUNT BALANCE
+  # =====================================
+  output$download_balance <- downloadHandler(
+    filename = function() paste0("account_balance_", Sys.Date(), ".csv"),
+    content = function(file) write.csv(filtered_balance_data(), file, row.names = FALSE, fileEncoding = "UTF-8")
+  )
+  
+  # =====================================
+  # ACCOUNT BUDGET
+  # =====================================
+  show_form    <- reactiveVal(FALSE)
+  pesan_parent <- reactiveVal(NULL)
+  
+  observeEvent(input$btn_new, {
+    show_form(TRUE)
+    pesan_parent(NULL)
+  })
+  
+  observeEvent(input$pilih_akun, {
+    req(input$pilih_akun)
+    akun <- daftar_akun[daftar_akun$Kode_Akun == input$pilih_akun, ]
+    if (nrow(akun) > 0 && akun$Is_Parent == TRUE) {
+      pesan_parent("Akun ini adalah parent account. Budget tidak dapat diisi.")
+    } else {
+      pesan_parent(NULL)
+    }
+  }, ignoreInit = TRUE)
+  
+  observeEvent(input$btn_simpan, {
+    akun <- daftar_akun[daftar_akun$Kode_Akun == input$pilih_akun, ]
+    if (akun$Is_Parent == TRUE) {
+      showNotification("Akun parent tidak bisa diisi budget!", type = "error")
+      return()
+    }
+    if (is.na(input$tahun_anggaran) || input$tahun_anggaran < 2000) {
+      showNotification("Tahun anggaran tidak valid!", type = "warning")
+      return()
+    }
+    total <- input$opening_balance + input$perubahan_budget
+    baris_baru <- data.frame(
+      Kode_Akun        = akun$Kode_Akun,
+      Nama_Akun        = akun$Nama_Akun,
+      Tahun_Anggaran   = input$tahun_anggaran,
+      Opening_Balance  = input$opening_balance,
+      Perubahan_Budget = input$perubahan_budget,
+      Total_Budget     = total,
+      stringsAsFactors = FALSE
+    )
+    data_budget(rbind(data_budget(), baris_baru))
+    showNotification("Data budget berhasil disimpan!", type = "message")
+    show_form(FALSE)
+    pesan_parent(NULL)
+  })
+  
+  observeEvent(input$btn_batal, {
+    show_form(FALSE)
+    pesan_parent(NULL)
+  })
+  
+  output$table_budget_list <- renderDT({
+    d <- data_budget()
+    if (nrow(d) == 0) {
+      return(datatable(
+        data.frame(Keterangan = "Belum ada data. Klik tombol + New untuk menambahkan."),
+        rownames = FALSE, options = list(dom = "t")
+      ))
+    }
+    disp <- data.frame(
+      `Kode Akun`        = d$Kode_Akun,
+      `Nama Akun`        = d$Nama_Akun,
+      `Tahun Anggaran`   = d$Tahun_Anggaran,
+      `Opening Balance`  = sapply(d$Opening_Balance,  rupiah_format),
+      `Perubahan Budget` = sapply(d$Perubahan_Budget, rupiah_format),
+      `Total Budget`     = sapply(d$Total_Budget,     rupiah_format),
+      check.names        = FALSE,
+      stringsAsFactors   = FALSE
+    )
+    datatable(disp, rownames = FALSE, selection = "none",
+              options = list(pageLength = 10, autoWidth = TRUE))
+  }, server = FALSE)
+  
+  output$form_budget <- renderUI({
+    if (!show_form()) return(NULL)
+    wellPanel(
+      h4("Form Input Account Budget"), hr(),
+      h5("Langkah 1 - Pilih Account"),
+      selectInput("pilih_akun", label = NULL,
+                  choices = setNames(
+                    daftar_akun$Kode_Akun,
+                    paste0(daftar_akun$Kode_Akun, " - ", daftar_akun$Nama_Akun,
+                           ifelse(daftar_akun$Is_Parent, " [Parent - tidak bisa diisi]", ""))
+                  ),
+                  width = "100%"),
+      uiOutput("ui_pesan_parent"),
+      uiOutput("ui_form_detail"),
+      br(),
+      actionButton("btn_simpan", "Simpan Budget", class = "btn btn-success"),
+      tags$span("   "),
+      actionButton("btn_batal",  "Batal",          class = "btn btn-default")
+    )
+  })
+  
+  output$ui_pesan_parent <- renderUI({
+    if (!is.null(pesan_parent())) {
+      div(style = "background:#fff3cd; border:1px solid #ffc107; border-radius:4px; padding:10px 14px; color:#856404; margin:8px 0;",
+          tags$b("Perhatian: "), pesan_parent())
+    }
+  })
+  
+  output$ui_form_detail <- renderUI({
+    req(input$pilih_akun)
+    akun <- daftar_akun[daftar_akun$Kode_Akun == input$pilih_akun, ]
+    if (nrow(akun) == 0 || akun$Is_Parent == TRUE) return(NULL)
+    tagList(
+      hr(), h5("Langkah 2 - Input Tahun Anggaran"),
+      numericInput("tahun_anggaran", label = NULL, value = as.integer(format(Sys.Date(), "%Y")),
+                   min = 2000, max = 2100, step = 1, width = "200px"),
+      hr(), h5("Langkah 3 - Input Opening Balance"),
+      numericInput("opening_balance", label = NULL, value = 0, min = 0, step = 1000000, width = "300px"),
+      hr(), h5("Langkah 4 - Input Perubahan Budget"),
+      numericInput("perubahan_budget", label = NULL, value = 0, step = 1000000, width = "300px"),
+      hr(),
+      div(style = "background:#d4edda; border:1px solid #28a745; border-radius:4px; padding:10px 14px; color:#155724;",
+          strong("Total Budget: "), textOutput("preview_total", inline = TRUE))
+    )
+  })
+  
+  output$preview_total <- renderText({
+    ob <- if (is.null(input$opening_balance)  || is.na(input$opening_balance))  0 else input$opening_balance
+    pb <- if (is.null(input$perubahan_budget) || is.na(input$perubahan_budget)) 0 else input$perubahan_budget
+    rupiah_format(ob + pb)
+  })
+  
+  # =====================================
+  # ACCOUNT HISTORY (Bagian Baru)
+  # =====================================
+  
+  # Transformasi data jurnal ke format Account History
+  history_data <- reactive({
+    df <- data_jurnal()
+    if(nrow(df) == 0){
+      return(data.frame(
+        Date = character(),
+        Source_No = character(),
+        Account_No = character(),
+        Account_Name = character(),
+        Debit = numeric(),
+        Credit = numeric(),
+        Dept = character(),
+        Project = character(),
+        Description = character(),
+        Source = character(),
+        stringsAsFactors = FALSE
+      ))
+    }
+    
+    history <- data.frame(
+      Date = df$Tanggal,
+      Source_No = df$No_Voucher,
+      Account_No = df$Kode_Akun,
+      Account_Name = df$Nama_Akun,
+      Debit = df$Debit,
+      Credit = df$Kredit,
+      Dept = ifelse(df$Subsidiary_Type != "None", df$Subsidiary_Type, "-"),
+      Project = "-",
+      Description = df$Keterangan,
+      Source = "Journal Voucher",
+      stringsAsFactors = FALSE
+    )
+    history
+  })
+  
+  # Reset filter Account History
+  observeEvent(input$reset_history_filters, {
+    updateSelectInput(session, "filter_type", selected = "Semua")
+    updateTextInput(session, "filter_source_no", value = "")
+    updateTextInput(session, "filter_account_no", value = "")
+    updateSelectInput(session, "filter_account_type", selected = "Semua")
+    updateTextInput(session, "filter_customer_vendor", value = "")
+    updateTextInput(session, "filter_project", value = "")
+    updateTextInput(session, "filter_department", value = "")
+    updateCheckboxInput(session, "filter_by_date", value = FALSE)
+    updateDateInput(session, "filter_date", value = Sys.Date())
+  })
+  
+  # Filter data history
+  filtered_history <- reactive({
+    data <- history_data()
+    if(nrow(data) == 0) return(data)
+    
+    if(input$filter_type != "Semua"){
+      data <- data[data$Source == input$filter_type, ]
+    }
+    if(input$filter_source_no != ""){
+      data <- data[grepl(input$filter_source_no, data$Source_No, ignore.case = TRUE), ]
+    }
+    if(input$filter_account_no != ""){
+      data <- data[grepl(input$filter_account_no, data$Account_No, ignore.case = TRUE), ]
+    }
+    if(input$filter_by_date){
+      data <- data[data$Date == as.character(input$filter_date), ]
+    }
+    data
+  })
+  
+  # Tampilkan tabel Account History
+  output$account_history_table <- renderDT({
+    df <- filtered_history()
+    if(nrow(df) > 0){
+      df$Debit <- sapply(df$Debit, rupiah_format)
+      df$Credit <- sapply(df$Credit, rupiah_format)
+      df <- df[order(df$Date, decreasing = TRUE), ]
+    }
+    datatable(df,
+              options = list(pageLength = 15, autoWidth = TRUE, scrollX = TRUE),
+              rownames = FALSE,
+              colnames = c("Date", "Source No", "Account No", "Account Name",
+                           "Debit", "Credit", "Dept", "Project", "Description", "Source"))
+  })
+}
+
+# =========================================
+# RUN APP
+# =========================================
+shinyApp(ui, server)
+
+
