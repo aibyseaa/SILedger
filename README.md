@@ -15,4 +15,4 @@ SILedger adalah solusi akuntansi modern berbasis R yang dirancang untuk mengotom
 * R Shiny
 * DT 
  # 👥 Pengembang
-Kelompok 9 - R Programming, FEB Universitas Gadjah Mada
+Kelompok 5 - R Programming, FEB Universitas Gadjah Mada
